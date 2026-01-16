@@ -46,24 +46,11 @@ func (c *Client) Register(ctx context.Context, username, password string) (*api.
 	}
 
 	var response api.AuthResponse
-	resp, err := c.httpClient.R().
-		SetContext(ctx).
-		SetBody(req).
-		SetResult(&response).
-		SetError(&api.ErrorResponse{}).
-		Post(c.baseURL + "/api/v1/register")
-
-	if err != nil {
-		return nil, fmt.Errorf("registration request failed: %w", err)
-	}
-
-	if resp.IsError() {
-		errResp := resp.Error().(*api.ErrorResponse)
-		return nil, fmt.Errorf("registration failed: %s", errResp.Message)
+	if err := doRequest(ctx, c.httpClient, "POST", c.baseURL+"/api/v1/register", req, &response); err != nil {
+		return nil, fmt.Errorf("registration failed: %w", err)
 	}
 
 	c.SetToken(response.Token)
-
 	return &response, nil
 }
 
@@ -74,24 +61,11 @@ func (c *Client) Login(ctx context.Context, username, password string) (*api.Aut
 	}
 
 	var response api.AuthResponse
-	resp, err := c.httpClient.R().
-		SetContext(ctx).
-		SetBody(req).
-		SetResult(&response).
-		SetError(&api.ErrorResponse{}).
-		Post(c.baseURL + "/api/v1/login")
-
-	if err != nil {
-		return nil, fmt.Errorf("login request failed: %w", err)
-	}
-
-	if resp.IsError() {
-		errResp := resp.Error().(*api.ErrorResponse)
-		return nil, fmt.Errorf("login failed: %s", errResp.Message)
+	if err := doRequest(ctx, c.httpClient, "POST", c.baseURL+"/api/v1/login", req, &response); err != nil {
+		return nil, fmt.Errorf("login failed: %w", err)
 	}
 
 	c.SetToken(response.Token)
-
 	return &response, nil
 }
 
@@ -104,20 +78,8 @@ func (c *Client) CreateEntry(ctx context.Context, name, entryType string, data m
 	}
 
 	var response api.EntryResponse
-	resp, err := c.httpClient.R().
-		SetContext(ctx).
-		SetBody(req).
-		SetResult(&response).
-		SetError(&api.ErrorResponse{}).
-		Post(c.baseURL + "/api/v1/entries")
-
-	if err != nil {
-		return nil, fmt.Errorf("create entry request failed: %w", err)
-	}
-
-	if resp.IsError() {
-		errResp := resp.Error().(*api.ErrorResponse)
-		return nil, fmt.Errorf("create entry failed: %s", errResp.Message)
+	if err := doRequest(ctx, c.httpClient, "POST", c.baseURL+"/api/v1/entries", req, &response); err != nil {
+		return nil, fmt.Errorf("create entry failed: %w", err)
 	}
 
 	return &response, nil
@@ -125,19 +87,8 @@ func (c *Client) CreateEntry(ctx context.Context, name, entryType string, data m
 
 func (c *Client) GetEntry(ctx context.Context, entryID uuid.UUID) (*api.EntryResponse, error) {
 	var response api.EntryResponse
-	resp, err := c.httpClient.R().
-		SetContext(ctx).
-		SetResult(&response).
-		SetError(&api.ErrorResponse{}).
-		Get(c.baseURL + "/api/v1/entries/" + entryID.String())
-
-	if err != nil {
-		return nil, fmt.Errorf("get entry request failed: %w", err)
-	}
-
-	if resp.IsError() {
-		errResp := resp.Error().(*api.ErrorResponse)
-		return nil, fmt.Errorf("get entry failed: %s", errResp.Message)
+	if err := doRequest(ctx, c.httpClient, "GET", c.baseURL+"/api/v1/entries/"+entryID.String(), nil, &response); err != nil {
+		return nil, fmt.Errorf("get entry failed: %w", err)
 	}
 
 	return &response, nil
@@ -145,19 +96,8 @@ func (c *Client) GetEntry(ctx context.Context, entryID uuid.UUID) (*api.EntryRes
 
 func (c *Client) ListEntries(ctx context.Context) (*api.ListEntriesResponse, error) {
 	var response api.ListEntriesResponse
-	resp, err := c.httpClient.R().
-		SetContext(ctx).
-		SetResult(&response).
-		SetError(&api.ErrorResponse{}).
-		Get(c.baseURL + "/api/v1/entries")
-
-	if err != nil {
-		return nil, fmt.Errorf("list entries request failed: %w", err)
-	}
-
-	if resp.IsError() {
-		errResp := resp.Error().(*api.ErrorResponse)
-		return nil, fmt.Errorf("list entries failed: %s", errResp.Message)
+	if err := doRequest(ctx, c.httpClient, "GET", c.baseURL+"/api/v1/entries", nil, &response); err != nil {
+		return nil, fmt.Errorf("list entries failed: %w", err)
 	}
 
 	return &response, nil
@@ -171,20 +111,8 @@ func (c *Client) UpdateEntry(ctx context.Context, entryID uuid.UUID, name string
 	}
 
 	var response api.EntryResponse
-	resp, err := c.httpClient.R().
-		SetContext(ctx).
-		SetBody(req).
-		SetResult(&response).
-		SetError(&api.ErrorResponse{}).
-		Put(c.baseURL + "/api/v1/entries/" + entryID.String())
-
-	if err != nil {
-		return nil, fmt.Errorf("update entry request failed: %w", err)
-	}
-
-	if resp.IsError() {
-		errResp := resp.Error().(*api.ErrorResponse)
-		return nil, fmt.Errorf("update entry failed: %s", errResp.Message)
+	if err := doRequest(ctx, c.httpClient, "PUT", c.baseURL+"/api/v1/entries/"+entryID.String(), req, &response); err != nil {
+		return nil, fmt.Errorf("update entry failed: %w", err)
 	}
 
 	return &response, nil
@@ -192,19 +120,8 @@ func (c *Client) UpdateEntry(ctx context.Context, entryID uuid.UUID, name string
 
 func (c *Client) DeleteEntry(ctx context.Context, entryID uuid.UUID) error {
 	var response api.SuccessResponse
-	resp, err := c.httpClient.R().
-		SetContext(ctx).
-		SetResult(&response).
-		SetError(&api.ErrorResponse{}).
-		Delete(c.baseURL + "/api/v1/entries/" + entryID.String())
-
-	if err != nil {
-		return fmt.Errorf("delete entry request failed: %w", err)
-	}
-
-	if resp.IsError() {
-		errResp := resp.Error().(*api.ErrorResponse)
-		return fmt.Errorf("delete entry failed: %s", errResp.Message)
+	if err := doRequest(ctx, c.httpClient, "DELETE", c.baseURL+"/api/v1/entries/"+entryID.String(), nil, &response); err != nil {
+		return fmt.Errorf("delete entry failed: %w", err)
 	}
 
 	return nil
@@ -216,20 +133,8 @@ func (c *Client) Sync(ctx context.Context, lastVersion int64) (*api.SyncResponse
 	}
 
 	var response api.SyncResponse
-	resp, err := c.httpClient.R().
-		SetContext(ctx).
-		SetBody(req).
-		SetResult(&response).
-		SetError(&api.ErrorResponse{}).
-		Post(c.baseURL + "/api/v1/sync")
-
-	if err != nil {
-		return nil, fmt.Errorf("sync request failed: %w", err)
-	}
-
-	if resp.IsError() {
-		errResp := resp.Error().(*api.ErrorResponse)
-		return nil, fmt.Errorf("sync failed: %s", errResp.Message)
+	if err := doRequest(ctx, c.httpClient, "POST", c.baseURL+"/api/v1/sync", req, &response); err != nil {
+		return nil, fmt.Errorf("sync failed: %w", err)
 	}
 
 	return &response, nil

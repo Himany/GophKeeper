@@ -8,8 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Himany/GophKeeper/internal/client"
-	"github.com/Himany/GophKeeper/internal/client/storage"
 	"github.com/Himany/GophKeeper/internal/config"
 	"github.com/Himany/GophKeeper/pkg/api"
 	"github.com/google/uuid"
@@ -18,9 +16,7 @@ import (
 )
 
 var (
-	cfg           *config.ClientConfig
-	clientStorage *storage.LocalStorage
-	apiClient     *client.Client
+	cmdCtx *CommandContext
 )
 
 var rootCmd = &cobra.Command{
@@ -59,7 +55,7 @@ var cfgFile string
 
 func initConfig() {
 	var err error
-	cfg, err = config.LoadClientConfig()
+	cfg, err := config.LoadClientConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
@@ -69,16 +65,10 @@ func initConfig() {
 		cfg.ServerURL = serverURL
 	}
 
-	clientStorage, err = storage.NewLocalStorage(cfg)
+	cmdCtx, err = NewCommandContext(cfg)
 	if err != nil {
-		fmt.Printf("Error initializing local storage: %v\n", err)
+		fmt.Printf("Error initializing command context: %v\n", err)
 		os.Exit(1)
-	}
-
-	apiClient = client.NewClient(cfg.ServerURL)
-
-	if token, _ := clientStorage.LoadToken(); token != "" {
-		apiClient.SetToken(token)
 	}
 }
 
@@ -94,6 +84,11 @@ var registerCmd = &cobra.Command{
 			fmt.Scanln(&username)
 		}
 
+		if err := cmdCtx.Validator.ValidateUsername(username); err != nil {
+			fmt.Printf("Invalid username: %v\n", err)
+			return
+		}
+
 		if password == "" {
 			fmt.Print("Password: ")
 			bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
@@ -105,16 +100,21 @@ var registerCmd = &cobra.Command{
 			fmt.Println()
 		}
 
+		if err := cmdCtx.Validator.ValidatePassword(password); err != nil {
+			fmt.Printf("Invalid password: %v\n", err)
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		response, err := apiClient.Register(ctx, username, password)
+		response, err := cmdCtx.APIClient.Register(ctx, username, password)
 		if err != nil {
 			fmt.Printf("Registration failed: %v\n", err)
 			return
 		}
 
-		if err := clientStorage.SaveToken(response.Token); err != nil {
+		if err := cmdCtx.Storage.SaveToken(response.Token); err != nil {
 			fmt.Printf("Warning: failed to save token: %v\n", err)
 		}
 
@@ -139,6 +139,11 @@ var loginCmd = &cobra.Command{
 			fmt.Scanln(&username)
 		}
 
+		if err := cmdCtx.Validator.ValidateUsername(username); err != nil {
+			fmt.Printf("Invalid username: %v\n", err)
+			return
+		}
+
 		if password == "" {
 			fmt.Print("Password: ")
 			bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
@@ -153,13 +158,13 @@ var loginCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		response, err := apiClient.Login(ctx, username, password)
+		response, err := cmdCtx.APIClient.Login(ctx, username, password)
 		if err != nil {
 			fmt.Printf("Login failed: %v\n", err)
 			return
 		}
 
-		if err := clientStorage.SaveToken(response.Token); err != nil {
+		if err := cmdCtx.Storage.SaveToken(response.Token); err != nil {
 			fmt.Printf("Warning: failed to save token: %v\n", err)
 		}
 
@@ -176,12 +181,12 @@ var logoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Logout from the server",
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := clientStorage.RemoveToken(); err != nil {
+		if err := cmdCtx.Storage.RemoveToken(); err != nil {
 			fmt.Printf("Error during logout: %v\n", err)
 			return
 		}
 
-		apiClient.SetToken("")
+		cmdCtx.APIClient.SetToken("")
 		fmt.Println("Logged out successfully")
 	},
 }
@@ -200,9 +205,24 @@ var addCmd = &cobra.Command{
 		name, _ := cmd.Flags().GetString("name")
 		metadata, _ := cmd.Flags().GetString("metadata")
 
+		if err := cmdCtx.Validator.ValidateEntryType(entryType); err != nil {
+			fmt.Printf("Invalid entry type: %v\n", err)
+			return
+		}
+
 		if name == "" {
 			fmt.Print("Entry name: ")
 			fmt.Scanln(&name)
+		}
+
+		if err := cmdCtx.Validator.ValidateEntryName(name); err != nil {
+			fmt.Printf("Invalid entry name: %v\n", err)
+			return
+		}
+
+		if err := cmdCtx.Validator.ValidateMetadata(metadata); err != nil {
+			fmt.Printf("Invalid metadata: %v\n", err)
+			return
 		}
 
 		var data map[string]string
@@ -227,10 +247,15 @@ var addCmd = &cobra.Command{
 			return
 		}
 
+		if err := validateEntryData(entryType, data); err != nil {
+			fmt.Printf("Invalid entry data: %v\n", err)
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		response, err := apiClient.CreateEntry(ctx, name, entryType, data, metadata)
+		response, err := cmdCtx.APIClient.CreateEntry(ctx, name, entryType, data, metadata)
 		if err != nil {
 			fmt.Printf("Failed to create entry: %v\n", err)
 			return
@@ -253,7 +278,7 @@ var listCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		response, err := apiClient.ListEntries(ctx)
+		response, err := cmdCtx.APIClient.ListEntries(ctx)
 		if err != nil {
 			fmt.Printf("Failed to list entries: %v\n", err)
 			return
@@ -293,7 +318,7 @@ var getCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		response, err := apiClient.GetEntry(ctx, entryID)
+		response, err := cmdCtx.APIClient.GetEntry(ctx, entryID)
 		if err != nil {
 			fmt.Printf("Failed to get entry: %v\n", err)
 			return
@@ -428,6 +453,21 @@ func displayEntry(entry *api.EntryResponse) {
 	fmt.Printf("Updated: %s\n", time.Unix(entry.UpdatedAt, 0).Format(time.RFC3339))
 }
 
+func validateEntryData(entryType string, data map[string]string) error {
+	switch entryType {
+	case "credentials":
+		return cmdCtx.Validator.ValidateCredentialsData(data)
+	case "text":
+		return cmdCtx.Validator.ValidateTextData(data)
+	case "binary":
+		return cmdCtx.Validator.ValidateBinaryData(data)
+	case "card":
+		return cmdCtx.Validator.ValidateCardData(data)
+	default:
+		return nil
+	}
+}
+
 var updateCmd = &cobra.Command{
 	Use:   "update [entry-id]",
 	Short: "Update data entry",
@@ -451,7 +491,7 @@ var deleteCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := apiClient.DeleteEntry(ctx, entryID); err != nil {
+		if err := cmdCtx.APIClient.DeleteEntry(ctx, entryID); err != nil {
 			fmt.Printf("Failed to delete entry: %v\n", err)
 			return
 		}

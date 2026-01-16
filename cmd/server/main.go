@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/Himany/GophKeeper/internal/config"
 	"github.com/Himany/GophKeeper/internal/server"
@@ -67,7 +68,7 @@ func main() {
 	<-quit
 	logger.Info("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := srv.Stop(ctx); err != nil {
